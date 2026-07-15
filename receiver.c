@@ -9,7 +9,8 @@
 #include <poll.h>
 
 #define BUFFER_SIZE 8192
-#define MAX_NACK_RETRIES 4   // NACKs are cheap (4 bytes), so we aggressively retry
+#define MAX_NACK_RETRIES 10  // NACKs are cheap (4 bytes), so we aggressively retry
+#define NACK_RETRY_INTERVAL_SEC 0.003   // ~3ms instead of 12ms
 
 struct JitterFrame {
     uint32_t seq;
@@ -102,22 +103,22 @@ void process_pending_nacks(double now) {
         if (missing_list[i].active) {
             uint32_t s = missing_list[i].seq;
             uint32_t idx = s % BUFFER_SIZE;
-            
-            // Clean up immediately if the packet has arrived
+
             if (jitter_buffer[idx].valid && jitter_buffer[idx].seq == s) {
                 missing_list[i].active = 0;
                 continue;
             }
-            
-            // 1. Fire the FIRST NACK the absolute microsecond we notice a gap!
+
             if (missing_list[i].retry_count == 0) {
+                // Send a small immediate burst — if the lone NACK gets dropped,
+                // there's no time left in the budget to recover from that later.
+                send_nack(s);
                 send_nack(s);
                 missing_list[i].last_nack_at = now;
                 missing_list[i].retry_count = 1;
-            } 
-            // 2. Aggressive Rapid-Fire Retry (every 12ms)
+            }
             else if (missing_list[i].retry_count < MAX_NACK_RETRIES) {
-                if (now - missing_list[i].last_nack_at >= 0.012) {
+                if (now - missing_list[i].last_nack_at >= NACK_RETRY_INTERVAL_SEC) {
                     send_nack(s);
                     missing_list[i].last_nack_at = now;
                     missing_list[i].retry_count++;
