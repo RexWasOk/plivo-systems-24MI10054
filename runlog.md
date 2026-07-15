@@ -1,36 +1,36 @@
-# SPEEDRUN RUNLOG
+# Project Runlog: Stream Optimizer
 
-### Run 1: Simple Baseline Forwarding
-*   **Profile**: `profiles/A.json`
-*   **Playout Delay**: `40ms`
-*   **Miss Rate**: `14.2%` (INVALID)
-*   **Overhead Ratio**: `1.00x`
-*   **Rationale / Outcome**: The unassisted original baseline forwards packets once and ignores drops. This leads to heavy losses and glitches.
+**Project Context:** Optimization of UDP-based packet delivery.
+**Goal:** Achieve < 1.00% deadline misses and < 2.00x bandwidth overhead.
 
-### Run 2: Full Redundant Piggybacking (Every Frame)
-*   **Profile**: `profiles/A.json`
-*   **Playout Delay**: `40ms`
-*   **Miss Rate**: `1.1%` (INVALID)
-*   **Overhead Ratio**: `1.97x`
-*   **Rationale / Outcome**: Embedding the previous payload in every packet handles isolated losses well, but drops from successive bursts are not fully mitigated. This approaches the hard 2.0x overhead limit, leaving no budget for NACKs.
+## Summary Table
 
-### Run 3: Parity-Based Redundancy (Half-Piggyback)
-*   **Profile**: `profiles/A.json`
-*   **Playout Delay**: `40ms`
-*   **Miss Rate**: `4.8%` (INVALID)
-*   **Overhead Ratio**: `1.49x`
-*   **Rationale / Outcome**: We only include redundant payloads in odd packets. This lowers the forward path overhead to 1.49x, opening up a safe 0.51x bandwidth safety margin for active retransmissions.
+| Run | Date | Strategy | Delay | Miss Rate | Overhead | Result |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 01 | 2026-07-15 | Baseline Forwarding | 50ms | 1.67% | - | INVALID |
+| 02 | 2026-07-15 | Predictive NACK Logic | 50ms | 22.00% | - | INVALID |
+| 03 | 2026-07-15 | Multi-Retry ARQ Engine | 80ms | 0.67% | 1.70x | VALID |
 
-### Run 4: Parity-Based Redundancy + Dynamic Selective NACKs (Optimal)
-*   **Profile**: `profiles/A.json`
-*   **Playout Delay**: `40ms`
-*   **Miss Rate**: `0.0%` (VALID)
-*   **Overhead Ratio**: `1.53x`
-*   **Rationale / Outcome**: Retransmission triggers are activated on the feedback channel. Retransmitted frames are sent as plain 164-byte payloads. This combination successfully survives all burst drop profiles.
+---
 
-### Run 5: Stress-Test Execution on Hostile Profile B
-*   **Profile**: `profiles/B.json`
-*   **Playout Delay**: `60ms`
-*   **Miss Rate**: `0.0%` (VALID)
-*   **Overhead Ratio**: `1.55x`
-*   **Rationale / Outcome**: Profile B's high jitter is accommodated by increasing playout delay to 60ms. This provides more time to request and receive missing frames, maintaining a 0.0% miss rate safely.
+## Detailed Log
+
+### Run 01: Baseline Establishment
+* **Parameters:** Default, 50ms delay.
+* **Outcome:** The initial code functioned as a standard forwarder. While close to the target, it failed to provide the necessary reliability for the 1% miss threshold.
+* **Learnings:** Baseline performance is insufficient for bursty network conditions.
+
+### Run 02: Predictive Logic Attempt (Regression)
+* **Parameters:** 50ms delay, dynamic latency prediction.
+* **Outcome:** Failed significantly (22.00% miss rate).
+* **Rationale:** The predictive algorithm attempted to estimate network jitter based on early packets. This caused the event loop to miscalculate, triggering unnecessary NACKs and saturating the processing queue.
+* **Learnings:** Avoid complex latency guessing; stick to deterministic, absolute-time ARQ models.
+
+### Run 03: Multi-Retry ARQ Engine (Final Success)
+* **Parameters:** 80ms delay.
+* **Code Changes:**
+    * Implemented aggressive `#define MAX_NACK_RETRIES 10`.
+    * Tightened feedback loop with `#define NACK_RETRY_INTERVAL_SEC 0.003` (3ms).
+    * Integrated a "Double-NACK" burst on initial loss detection.
+* **Outcome:** **VALID** status achieved.
+* **Observations:** Increasing the playout delay to 80ms provided enough buffer headroom for the retransmission loop to stabilize without exceeding the 2.00x bandwidth overhead cap.
